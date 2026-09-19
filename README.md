@@ -1,290 +1,149 @@
-# Inferring the Unmeasured: An AI Physiological State Estimator
+Inferring the Unmeasured: An AI Physiological State Estimator
 
-**graVITas '26 Hackathon — VIT | IEEE Signal Processing Society**
+graVITas '26 Hackathon — VIT | IEEE Signal Processing Society
 
-An STM32-based system that infers **hidden physiological states** — states that are never
-directly sensed — from only two cheap, easily-obtained signals: a single-lead ECG and a
-skin temperature reading.
+Overview
 
-> **Problem Statement 4 — AI-Based Physiological State Estimator Using Synthetic Patient Data**
-> *"One of the major directions in modern digital-health research is attempting to infer
-> physiological variables that are difficult or expensive to measure continuously, in which
-> case we make use of the signals that are easier to obtain. Develop a physiological patient
-> model by using the ECG and temperature sensor measurements to estimate hidden physiological
-> states."*
+An STM32-based system that estimates hidden physiological states using only two low-cost signals: single-lead ECG and skin temperature.
 
----
+Problem Statement 4: AI-Based Physiological State Estimator Using Synthetic Patient Data.
 
-## The Core Idea
+The system estimates respiration rate from ECG using respiratory sinus arrhythmia (RSA). Breathing changes the timing between heartbeats, allowing respiration to be inferred from ECG beat-to-beat intervals without a dedicated respiration sensor.
 
-We never attach a respiration sensor. We never attach a stress monitor. Yet the system
-reports both.
+The estimated respiration rate is combined with heart rate, HRV (RMSSD), and temperature using an on-device Mamdani fuzzy logic classifier to report a physiological state.
 
-The insight is **respiratory sinus arrhythmia**: breathing physically modulates the timing
-between heartbeats. Inhale, and the heart speeds up fractionally; exhale, and it slows. That
-modulation is buried in the beat-to-beat intervals of an ordinary ECG — a signal we already
-have. Pull it out in the frequency domain and you recover the subject's respiration rate
-without ever measuring their breath.
+All inference runs on the STM32. A laptop is used only for tuning and live visualization.
 
-That inferred respiration rate is then fused with heart rate, heart rate variability, and
-body temperature by an on-device fuzzy logic classifier into a categorical physiological
-state.
+Hardware
 
-**Everything runs on the microcontroller.** The laptop plots results and, beforehand, tunes
-the algorithm — but no inference is offloaded to it.
+Component
 
----
+Role
 
-## System Architecture
+STM32F401CCU6
 
-```
-   ┌──────────────┐
-   │  Electrodes  │
-   └──────┬───────┘
-          │ analog
-   ┌──────▼───────┐        ┌──────────────┐
-   │   AD8232     │        │   DS18B20    │
-   │ ECG frontend │        │ temperature  │
-   └──────┬───────┘        └──────┬───────┘
-          │ PA4 (ADC1_IN4)        │ PA1 (1-Wire)
-   ┌──────▼───────────────────────▼──────────────────────────┐
-   │              STM32F401CCU6  @ 84 MHz, FPU               │
-   │                                                         │
-   │  ADC + DMA ──► R-peak detection ──► R-R interval series │
-   │   250 Hz        (Pan-Tompkins)            │             │
-   │                                           ▼             │
-   │                            4 Hz resample → Hann → FFT   │
-   │                              (CMSIS-DSP, 128-pt)        │
-   │                                           │             │
-   │                                           ▼             │
-   │                              RESPIRATION RATE  ◄── hidden state
-   │                                           │             │
-   │   HR ──┬── HRV (RMSSD) ──┬────────────────┤             │
-   │        │                 │                │             │
-   │        ▼                 ▼                ▼      TEMP ──┤
-   │     ┌──────────────────────────────────────────────┐    │
-   │     │   FUZZY INFERENCE  (Mamdani, on-device)      │    │
-   │     │   NORMAL / STRESSED / FEVERISH / CONCERNING  │    │
-   │     └──────────────────────────────────────────────┘    │
-   └────────────────────────┬────────────────────────────────┘
-                            │ USART1 @ 115200
-                            ▼
-                    ┌───────────────┐
-                    │ Laptop        │
-                    │ live dashboard│
-                    └───────────────┘
-```
+Cortex-M4 @ 84 MHz; acquisition, DSP and inference
 
----
+AD8232 + electrodes
 
-## Hardware
+Single-lead ECG
 
-| Component | Role |
-|---|---|
-| STM32F401CCU6 (Black Pill) | Cortex-M4 @ 84 MHz with FPU — all acquisition, DSP and inference |
-| AD8232 + electrodes | Single-lead ECG analog front end |
-| DS18B20 | Body temperature (1-Wire) |
-| ST-Link V2 | Flashing, debugging, and 3.3 V supply |
-| USB-to-TTL | Telemetry link to the dashboard |
+DS18B20
 
-### Wiring
+Body temperature
 
-| From | Pin | To | Notes |
-|---|---|---|---|
-| AD8232 | OUTPUT | PA4 | ADC1_IN4 |
-| AD8232 | LO+ / LO− | PB0 / PB1 | lead-off detection |
-| AD8232 | 3.3V / GND | 3.3 V / GND rail | |
-| DS18B20 | DQ | PA1 | internal pull-up — no external resistor |
-| DS18B20 | VDD / GND | 3.3 V / GND rail | |
-| USB-TTL | TX / RX | PA10 / PA9 | crossed |
-| ST-Link | SWDIO / SWCLK | PA13 / PA14 | |
-| ST-Link | 3.3V / GND | 3.3 V / GND rail | sole power source |
-| — | — | PC13 | onboard LED, pulses on each detected beat |
+ST-Link V2
 
----
+Programming, debugging and power
 
-## Signal Processing Pipeline
+USB-to-TTL
 
-**1 — Acquisition.** TIM2 triggers ADC1 at a hardware-exact 250 Hz. DMA fills a circular
-buffer in ping-pong fashion, so the CPU processes one half while the other fills. No sample
-is ever dropped to CPU load.
+Telemetry to laptop
 
-**2 — Beat detection.** A Pan-Tompkins-style chain — bandpass (5–15 Hz) → derivative →
-square → moving-window integration → adaptive threshold — locates R-peaks. A 200 ms
-refractory window suppresses double-detection. Each detected beat pulses the onboard LED,
-giving an immediate visual confirmation that detection is live and correct.
+Connections: AD8232 output → PA4 (ADC); lead-off → PB0/PB1. DS18B20 data → PA1. USB-TTL → PA9/PA10. ST-Link SWD → PA13/PA14.
 
-**3 — Respiration extraction (the hidden state).** R-R intervals arrive irregularly, once
-per beat, so they are linearly interpolated onto a uniform 4 Hz grid. A 128-sample window
-(32 s) is detrended, Hann-windowed, and transformed with `arm_rfft_fast_f32`. The magnitude
-spectrum is searched **only** within 0.15–0.40 Hz — the physiological respiratory band,
-equivalent to 9–24 breaths/min — and the peak is refined by parabolic interpolation across
-its neighbouring bins for sub-bin resolution. Confidence is the ratio of peak magnitude to
-in-band mean magnitude.
+Signal Processing
 
-This runs once every 5 seconds rather than continuously: the output changes slowly, and
-recomputing it per-sample would waste the power budget of a wearable for no accuracy gain.
+1. ECG acquisition: ADC samples at 250 Hz using DMA.
 
-**4 — Fuzzy inference.** A hand-written Mamdani engine takes heart rate, RMSSD, respiration
-rate and temperature. Each input carries three triangular membership functions
-(LOW / NORMAL / HIGH); roughly a dozen rules are combined with min-AND and max-aggregation,
-then defuzzified by centroid into a 0–100 risk score that maps to the reported state.
+2. R-peak detection: A Pan-Tompkins-style process uses bandpass filtering, derivative, squaring, moving-window integration and adaptive thresholding.
 
----
+3. Respiration estimation: R-R intervals are interpolated to 4 Hz, processed using a 128-point Hann-windowed FFT, and searched in the 0.15–0.40 Hz respiratory band (9–24 breaths/min). The estimate is updated every 5 seconds.
 
-## Synthetic Patient Data
+4. Physiological state: Heart rate, RMSSD, respiration rate and temperature are passed through a Mamdani fuzzy classifier. The output is a 0–100 risk score mapped to:
 
-We cannot tune a respiration estimator on real subjects, because we have no instrument that
-tells us a real person's true respiration rate to the precision required for ground truth.
-So we generate patients whose answers we know by construction.
+Normal
 
-Two generators are used:
+Stressed
 
-- **Analytic R-R synthesis** — the interval series is built directly as
-  `RR(t) = RR_mean + A_rsa·sin(2πf_resp·t) + noise`, giving mathematically exact ground
-  truth for tuning the frequency analysis.
-- **Full waveform synthesis** — realistic ECG waveforms with embedded respiratory
-  modulation, passed through the complete chain including R-peak detection, to validate
-  end-to-end rather than just the FFT stage.
+Feverish
 
-Both sweep respiration rate (9–24 brpm), heart rate (50–120 BPM), RSA modulation depth,
-additive noise, and randomly dropped beats (0 / 5 / 15 %) simulating electrode lead-off and
-motion artifact.
+Concerning
 
-The Python extractor is a **step-for-step reimplementation of the firmware's algorithm** —
-same resample rate, same window length, same band, same interpolation. If the two diverged,
-the tuned constants would not transfer. The tuning run emits `tuned_config.h`, which is
-pasted directly into the firmware.
+Synthetic Patient Data
 
----
+Synthetic data is used because accurate respiration ground truth is difficult to obtain without additional measurement equipment.
 
-## Results
+Two approaches are used:
 
-<!-- FILL THESE IN AFTER YOUR TUNING RUN — DO NOT SUBMIT WITH PLACEHOLDERS -->
+Analytic R-R synthesis: Creates mathematically controlled R-R signals with known respiration rates.
 
-| Metric | Result |
-|---|---|
-| Respiration MAE (clean signal) | `__ breaths/min` |
-| Respiration MAE (15 % beat loss) | `__ breaths/min` |
-| Fuzzy state classification accuracy | `__ %` |
-| Synthetic patients evaluated | `__` |
+Full waveform synthesis: Generates realistic ECG waveforms with respiratory modulation and tests the complete processing pipeline.
 
-**Live validation.** Beyond synthetic metrics, respiration output was checked against a
-human subject breathing at a deliberately counted rate:
+The datasets vary respiration rate, heart rate, RSA strength, noise and beat loss (0%, 5%, 15%).
 
-| Counted rate (brpm) | System estimate (brpm) |
-|---|---|
-| `__` | `__` |
-| `__` | `__` |
+The Python tuning pipeline mirrors the firmware algorithm so tuned parameters can be transferred directly to the STM32.
 
-Plots: `results/true_vs_estimated.png`, `results/error_vs_snr.png`,
-`results/error_vs_beatloss.png`, `results/confusion_matrix.png`
+Results
 
----
+Final metrics should be filled after the tuning run.
 
-## Repository Structure
+Metric
 
-```
-├── firmware/              STM32 project (CubeIDE)
-│   ├── Core/Src/
-│   │   ├── main.c              cooperative scheduler, telemetry output
-│   │   ├── ecg.c               ADC/DMA acquisition + R-peak detection
-│   │   ├── respiration.c       CMSIS-DSP respiration extraction
-│   │   ├── ds18b20.c           non-blocking 1-Wire driver
-│   │   └── fuzzy.c             Mamdani inference engine
-│   └── Core/Inc/
-│       └── config.h            all tunable constants (from tuning run)
-│
-├── synthetic/             offline data generation + tuning
-│   ├── synth.py                synthetic patient generators
-│   ├── extractor.py            firmware-parity respiration algorithm
-│   ├── fuzzy.py                Python mirror of the classifier
-│   ├── tune.py                 grid search, validation, reporting
-│   └── requirements.txt
-│
-├── dashboard/
-│   └── dashboard.py            live telemetry visualisation
-│
-└── results/               generated plots, metrics, tuned_config.h
-```
+Result
 
----
+Respiration MAE — clean signal
 
-## Build & Run
+___ breaths/min
 
-**Firmware**
-1. Open `firmware/` in STM32CubeIDE
-2. Connect ST-Link, build, flash
-3. LED on PC13 should begin pulsing once electrodes are attached
+Respiration MAE — 15% beat loss
 
-**Tuning (run before flashing final constants)**
-```bash
-cd synthetic
-pip install -r requirements.txt
-python tune.py            # writes results/tuned_config.h
-```
-Copy `results/tuned_config.h` over `firmware/Core/Inc/config.h`, rebuild, reflash.
+___ breaths/min
 
-**Dashboard**
-```bash
-cd dashboard
-python dashboard.py --port COM3        # or /dev/ttyUSB0
-```
+Fuzzy classification accuracy
 
-**Telemetry format** — one line per second over USART1 @ 115200:
-```
-HR:72,HRV:45,RR:14.2,TEMP:36.8,STATE:NORMAL,RISK:22,QUALITY:GOOD
-```
-Unavailable fields are sent as `---` rather than fabricated.
+___ %
 
----
+Synthetic patients evaluated
 
-## Engineering Decisions
+___
 
-**No external pull-up resistor.** Our kit contained no 4.7 kΩ resistor for the DS18B20's
-1-Wire bus. Rather than lose the sensor, we drive the pin open-drain and enable the STM32's
-internal pull-up (datasheet Table 54: R_PU typ. 40 kΩ). It is weaker than specification, so
-scratchpad CRC8 validation is enforced on every read — a marginal edge produces a rejected
-read and an honest "unknown", never a silently corrupt temperature.
+Live validation should also compare the estimated respiration rate with a manually counted breathing rate.
 
-**ECG on PA4, not PA0.** Many Black Pill boards wire a user push-button to PA0. Routing an
-analog biosignal through a pin with a mechanical switch to ground invites artifacts, so the
-ADC input was moved to ADC1_IN4.
+Build and Operation
 
-**Nothing blocks.** A DS18B20 conversion takes 750 ms. A naive blocking read would stall the
-250 Hz ECG pipeline and destroy beat detection, so temperature acquisition is a
-start → poll → read state machine. 1-Wire bit timing uses the DWT cycle counter rather than
-a hardware timer, leaving all TIM peripherals available for acquisition.
+Open the firmware project in STM32CubeIDE.
 
-**Graceful degradation is a feature, not an afterthought.** Real wearables lose electrodes
-and pick up motion. When leads detach, confidence collapses, or temperature fails CRC, the
-fuzzy engine still produces a state from whatever inputs remain and reports reduced
-confidence. The system never invents a number it does not have.
+Connect the ST-Link and flash the STM32.
 
-**Event-driven heavy computation.** The FFT runs every 5 s, not every sample — a deliberate
-power/accuracy trade appropriate to a battery-powered wearable.
+Run the Python tuning script before final deployment.
 
----
+Copy the tuned configuration into the firmware and reflash.
 
-## Limitations & Future Work
+Run the dashboard to view live telemetry.
 
-- Respiration extraction relies on respiratory sinus arrhythmia, which weakens with age and
-  in certain cardiac conditions; a second EDR channel using R-wave amplitude modulation
-  would add redundancy.
-- The 32-second analysis window means the estimate lags rapid changes in breathing.
-- Fuzzy membership functions are tuned on synthetic populations; clinical deployment would
-  require calibration against annotated patient recordings.
-- Single-lead ECG limits morphology analysis — arrhythmia classification would benefit from
-  additional leads.
+Example telemetry:
 
----
+HR:72, HRV:45, RR:14.2, TEMP:36.8, STATE:NORMAL, RISK:22, QUALITY:GOOD
 
-## Team
+Unavailable measurements are reported as --- rather than fabricated.
 
-**Team:** `__`
-**Members:** `__`
-**Institution:** `__`
+Key Engineering Decisions
 
----
+No external DS18B20 pull-up: The internal STM32 pull-up is used, with CRC validation to reject unreliable readings.
 
-*Built in 24 hours at graVITas '26.*
+ECG on PA4: Chosen instead of PA0 to avoid interference from the onboard button.
+
+Non-blocking temperature reading: Prevents the 750 ms DS18B20 conversion from interrupting ECG processing.
+
+Graceful degradation: Missing or unreliable signals reduce confidence instead of producing fabricated values.
+
+Event-driven FFT: Respiration analysis runs every 5 seconds to reduce unnecessary processing and power use.
+
+Limitations and Future Work
+
+RSA-based respiration estimation can weaken in some subjects and cardiac conditions.
+
+The 32-second analysis window causes a delay when breathing changes rapidly.
+
+Fuzzy rules are tuned using synthetic data and require validation with real annotated patient data.
+
+A single ECG lead limits detailed cardiac analysis.
+
+A second ECG-derived respiration method could improve reliability.
+
+Team
+
+Team: Fantastic 4
+Members: Dharnesh, Preetam, Nischall, Jeffrey
+Institution: Christ university
