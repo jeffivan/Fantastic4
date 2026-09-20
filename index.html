@@ -1,0 +1,2144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PHYSIOLOGICAL FIELD — Real-Time Physiological State Estimator</title>
+<meta name="description" content="Real-time physiological state estimator for STM32F401CCU6 with AD8232 ECG and DS18B20 temperature sensor. Research demonstration.">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   CSS — PHYSIOLOGICAL FIELD
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+    --bg: #07090C;
+    --surface: rgba(12, 16, 24, 0.85);
+    --surface-hover: rgba(18, 24, 36, 0.9);
+    --border: rgba(40, 50, 70, 0.35);
+    --border-light: rgba(60, 75, 100, 0.25);
+    --text-primary: #E2E8F0;
+    --text-secondary: #64748B;
+    --text-dim: #475569;
+    --cyan: #00D4FF;
+    --cyan-dim: rgba(0, 212, 255, 0.5);
+    --cyan-faint: rgba(0, 212, 255, 0.12);
+    --violet: #8B5CF6;
+    --violet-dim: rgba(139, 92, 246, 0.5);
+    --violet-faint: rgba(139, 92, 246, 0.12);
+    --green: #10B981;
+    --green-dim: rgba(16, 185, 129, 0.5);
+    --amber: #F59E0B;
+    --amber-dim: rgba(245, 158, 11, 0.5);
+    --orange: #F97316;
+    --red: #EF4444;
+    --red-dim: rgba(239, 68, 68, 0.5);
+    --font-ui: -apple-system, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    --radius: 4px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Top Bar ────────────────────────────────────────────────── */
+#topBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8, 11, 18, 0.95);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    min-height: 48px;
+    backdrop-filter: blur(8px);
+}
+.top-left { display: flex; flex-direction: column; gap: 1px; }
+.top-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+.top-subtitle {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+}
+.top-center { display: flex; align-items: center; gap: 12px; }
+.connection-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.conn-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    animation: pulse-dot 2s infinite;
+}
+.conn-dot.sim { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-dim); }
+.conn-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green-dim); }
+.conn-dot.disconnected { background: var(--text-dim); animation: none; }
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.connect-btn {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.connect-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.connect-btn:disabled { opacity: 0.3; cursor: default; }
+
+.top-right {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+    text-align: right;
+}
+
+/* ── Controls Strip ─────────────────────────────────────────── */
+#controlsStrip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8, 11, 18, 0.7);
+    flex-wrap: wrap;
+}
+.ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.ctrl-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-right: 6px;
+    font-family: var(--font-mono);
+}
+.ctrl-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+}
+.ctrl-btn:hover { border-color: var(--cyan-dim); color: var(--text-primary); }
+.ctrl-btn.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: var(--cyan-faint);
+}
+.ctrl-btn.warn.active {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(245, 158, 11, 0.1);
+}
+.ctrl-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+/* ── Main Content ───────────────────────────────────────────── */
+#mainContent {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── Section Headers ────────────────────────────────────────── */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.section-title {
+    font-size: 9px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+.section-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+.section-tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: var(--amber);
+    padding: 2px 6px;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: var(--radius);
+}
+
+/* ── Field Section ──────────────────────────────────────────── */
+#fieldSection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    min-height: 50vh;
+}
+#fieldContainer {
+    position: relative;
+    flex-shrink: 0;
+}
+#fieldCanvas {
+    display: block;
+}
+#stateEngine {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 160px;
+}
+.state-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    transition: all 0.4s ease;
+    cursor: default;
+}
+.state-item .s-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-dim);
+    transition: all 0.4s ease;
+    flex-shrink: 0;
+}
+.state-item .s-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    transition: all 0.4s ease;
+}
+.state-item.active {
+    border-color: var(--border);
+    background: var(--surface);
+}
+.state-item.active .s-dot { border-color: currentColor; background: currentColor; }
+.state-item.active .s-label { color: var(--text-primary); }
+.state-item.active.st-normal { color: var(--green); }
+.state-item.active.st-stressed { color: var(--amber); }
+.state-item.active.st-feverish { color: var(--orange); }
+.state-item.active.st-concerning { color: var(--red); }
+.state-item.active.st-unknown { color: var(--text-secondary); }
+
+.risk-conf-readout {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.rc-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+}
+.rc-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+}
+.rc-value {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Telemetry Panel ────────────────────────────────────────── */
+#telemetryPanel {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+}
+.telem-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 110px;
+}
+.telem-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.telem-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+}
+.telem-value {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+}
+.telem-unit {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+}
+.telem-canvas-wrap {
+    flex: 1;
+    min-height: 42px;
+    position: relative;
+}
+.telem-canvas-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ── ECG Lab ────────────────────────────────────────────────── */
+#ecgLab {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+}
+.ecg-lab-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+.ecg-lab-header:hover { background: var(--surface-hover); }
+.ecg-lab-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ecg-lab-title {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+.ecg-lab-chevron {
+    font-size: 10px;
+    color: var(--text-dim);
+    transition: transform 0.3s;
+}
+.ecg-lab-chevron.expanded { transform: rotate(90deg); }
+.ecg-lab-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-dim);
+}
+.ecg-lab-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease;
+}
+.ecg-lab-body.expanded { max-height: 500px; }
+.ecg-lab-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.ecg-canvas-wrap {
+    position: relative;
+    height: 220px;
+}
+.ecg-canvas-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.ecg-adc-readout {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--cyan-dim);
+    pointer-events: none;
+}
+
+/* ── Timeline ───────────────────────────────────────────────── */
+#timelineSection { position: relative; }
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.timeline-canvas-wrap {
+    position: relative;
+    height: 260px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+}
+.timeline-canvas-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.timeline-tooltip {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    background: rgba(10, 14, 22, 0.95);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-primary);
+    z-index: 50;
+    min-width: 120px;
+}
+.timeline-tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 1px 0;
+}
+.timeline-tooltip .tt-label { color: var(--text-dim); }
+
+/* ── Footer ─────────────────────────────────────────────────── */
+#footer {
+    text-align: center;
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+}
+.footer-main {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.footer-disclaimer {
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0.5;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    #telemetryPanel { grid-template-columns: repeat(3, 1fr); }
+    #fieldSection { flex-direction: column; }
+    #stateEngine { flex-direction: row; flex-wrap: wrap; justify-content: center; min-width: unset; }
+}
+@media (max-width: 700px) {
+    #telemetryPanel { grid-template-columns: repeat(2, 1fr); }
+    #topBar { flex-direction: column; gap: 6px; text-align: center; }
+    .top-right { text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ TOP BAR ═══════════════════ -->
+<div id="topBar">
+    <div class="top-left">
+        <div class="top-title">Physiological Field</div>
+        <div class="top-subtitle">Real-Time Physiological State Estimator</div>
+    </div>
+    <div class="top-center">
+        <div class="connection-indicator" id="connIndicator">
+            <span class="conn-dot sim" id="connDot"></span>
+            <span id="connLabel">SIMULATION</span>
+        </div>
+        <button class="connect-btn" id="connectBtn" title="Connect to hardware via Web Serial">CONNECT</button>
+    </div>
+    <div class="top-right">
+        STM32F401CCU6 · 115200 8N1 · ECG 125 Hz
+    </div>
+</div>
+
+<!-- ═══════════════════ CONTROLS ═══════════════════ -->
+<div id="controlsStrip">
+    <div class="ctrl-group">
+        <span class="ctrl-label">Scenario</span>
+        <button class="ctrl-btn active" data-scenario="RESTING">RESTING</button>
+        <button class="ctrl-btn" data-scenario="EXERCISE">EXERCISE</button>
+        <button class="ctrl-btn" data-scenario="STRESS">STRESS</button>
+        <button class="ctrl-btn" data-scenario="FEVER_LIKE">FEVER</button>
+        <button class="ctrl-btn warn" data-scenario="NOISY">NOISY</button>
+        <button class="ctrl-btn warn" data-scenario="LEADS_OFF">LEADS OFF</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+        <span class="ctrl-label">Speed</span>
+        <button class="ctrl-btn" data-speed="0.5">0.5×</button>
+        <button class="ctrl-btn active" data-speed="1">1×</button>
+        <button class="ctrl-btn" data-speed="2">2×</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+        <button class="ctrl-btn" id="btnPause">PAUSE</button>
+        <button class="ctrl-btn" id="btnReset">RESET</button>
+    </div>
+</div>
+
+<!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+<div id="mainContent">
+
+    <!-- Field + State Engine -->
+    <div>
+        <div class="section-header">
+            <span class="section-title">Physiological Field</span>
+            <span class="section-line"></span>
+            <span class="section-tag" id="simTag">SIMULATED TELEMETRY</span>
+        </div>
+        <div id="fieldSection">
+            <div id="fieldContainer">
+                <canvas id="fieldCanvas"></canvas>
+            </div>
+            <div id="stateEngine">
+                <div class="state-item st-normal active" data-state="NORMAL"><span class="s-dot"></span><span class="s-label">NORMAL</span></div>
+                <div class="state-item st-stressed" data-state="STRESSED"><span class="s-dot"></span><span class="s-label">STRESSED</span></div>
+                <div class="state-item st-feverish" data-state="FEVERISH"><span class="s-dot"></span><span class="s-label">FEVERISH</span></div>
+                <div class="state-item st-concerning" data-state="CONCERNING"><span class="s-dot"></span><span class="s-label">CONCERNING</span></div>
+                <div class="state-item st-unknown" data-state="UNKNOWN"><span class="s-dot"></span><span class="s-label">UNKNOWN</span></div>
+                <div class="risk-conf-readout">
+                    <div class="rc-item">
+                        <span class="rc-label">RISK</span>
+                        <span class="rc-value" id="riskValue">---</span>
+                    </div>
+                    <div class="rc-item">
+                        <span class="rc-label">CONF</span>
+                        <span class="rc-value" id="confValue">---</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telemetry Panel -->
+    <div>
+        <div class="section-header">
+            <span class="section-title">Physiological Telemetry</span>
+            <span class="section-line"></span>
+        </div>
+        <div id="telemetryPanel">
+            <div class="telem-card" id="tcHR">
+                <div class="telem-header">
+                    <span class="telem-label">HR</span>
+                    <span class="telem-unit">bpm</span>
+                </div>
+                <div class="telem-value" id="tvHR" style="color:var(--cyan)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvHR"></canvas></div>
+            </div>
+            <div class="telem-card" id="tcHRV">
+                <div class="telem-header">
+                    <span class="telem-label">HRV</span>
+                    <span class="telem-unit">ms RMSSD</span>
+                </div>
+                <div class="telem-value" id="tvHRV" style="color:var(--violet)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvHRV"></canvas></div>
+            </div>
+            <div class="telem-card" id="tcRR">
+                <div class="telem-header">
+                    <span class="telem-label">RR</span>
+                    <span class="telem-unit">br/min</span>
+                </div>
+                <div class="telem-value" id="tvRR" style="color:var(--green)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvRR"></canvas></div>
+            </div>
+            <div class="telem-card" id="tcTEMP">
+                <div class="telem-header">
+                    <span class="telem-label">TEMP</span>
+                    <span class="telem-unit">°C</span>
+                </div>
+                <div class="telem-value" id="tvTEMP" style="color:var(--amber)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvTEMP"></canvas></div>
+            </div>
+            <div class="telem-card" id="tcQUALITY">
+                <div class="telem-header">
+                    <span class="telem-label">QUALITY</span>
+                    <span class="telem-unit">signal</span>
+                </div>
+                <div class="telem-value" id="tvQUALITY" style="color:var(--green)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvQUALITY"></canvas></div>
+            </div>
+            <div class="telem-card" id="tcCONF">
+                <div class="telem-header">
+                    <span class="telem-label">CONFIDENCE</span>
+                    <span class="telem-unit">%</span>
+                </div>
+                <div class="telem-value" id="tvCONF" style="color:var(--cyan)">---</div>
+                <div class="telem-canvas-wrap"><canvas id="cvCONF"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ECG Lab -->
+    <div>
+        <div id="ecgLab">
+            <div class="ecg-lab-header" id="ecgLabToggle">
+                <div class="ecg-lab-header-left">
+                    <span class="ecg-lab-chevron expanded" id="ecgChevron">▶</span>
+                    <span class="ecg-lab-title">ECG Lab</span>
+                </div>
+                <div class="ecg-lab-meta">
+                    <span>STREAM 125 Hz</span>
+                    <span id="ecgSourceLabel">SIM</span>
+                </div>
+            </div>
+            <div class="ecg-lab-body expanded" id="ecgLabBody">
+                <div class="ecg-lab-controls">
+                    <button class="ctrl-btn" id="ecgPause">PAUSE</button>
+                    <button class="ctrl-btn" id="ecgClear">CLEAR</button>
+                    <div class="ctrl-sep"></div>
+                    <span class="ctrl-label">Zoom</span>
+                    <button class="ctrl-btn" id="ecgZoomOut">−</button>
+                    <button class="ctrl-btn" id="ecgZoomIn">+</button>
+                    <div class="ctrl-sep"></div>
+                    <button class="ctrl-btn active" id="ecgLiveBtn">LIVE</button>
+                </div>
+                <div class="ecg-canvas-wrap">
+                    <canvas id="ecgLabCanvas"></canvas>
+                    <div class="ecg-adc-readout" id="ecgADC">ADC: ---</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div id="timelineSection">
+        <div class="section-header">
+            <span class="section-title">Physiological Timeline</span>
+            <span class="section-line"></span>
+        </div>
+        <div class="timeline-controls">
+            <span class="ctrl-label">Window</span>
+            <button class="ctrl-btn" data-twindow="5">5 min</button>
+            <button class="ctrl-btn active" data-twindow="10">10 min</button>
+            <button class="ctrl-btn" data-twindow="30">30 min</button>
+        </div>
+        <div class="timeline-canvas-wrap" id="timelineWrap">
+            <canvas id="timelineCanvas"></canvas>
+            <div class="timeline-tooltip" id="timelineTooltip">
+                <div class="tt-row"><span class="tt-label">HR</span><span class="tt-val" id="ttHR">---</span></div>
+                <div class="tt-row"><span class="tt-label">HRV</span><span class="tt-val" id="ttHRV">---</span></div>
+                <div class="tt-row"><span class="tt-label">RR</span><span class="tt-val" id="ttRR">---</span></div>
+                <div class="tt-row"><span class="tt-label">TEMP</span><span class="tt-val" id="ttTEMP">---</span></div>
+                <div class="tt-row"><span class="tt-label">RISK</span><span class="tt-val" id="ttRISK">---</span></div>
+                <div class="tt-row"><span class="tt-label">CONF</span><span class="tt-val" id="ttCONF">---</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<div id="footer">
+    <div class="footer-main">Physiological State Estimator · STM32F401CCU6 · AD8232 · DS18B20</div>
+    <div class="footer-disclaimer">For research and demonstration purposes. Not a medical diagnostic device.</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   PHYSIOLOGICAL FIELD — Complete Application
+   ═══════════════════════════════════════════════════════════════════ */
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+const FONT_MONO = "'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace";
+const FONT_UI = "-apple-system, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif";
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function fmt(v, d = 0) {
+    if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '---';
+    return typeof v === 'number' ? v.toFixed(d) : String(v);
+}
+function mapRange(v, inLo, inHi, outLo, outHi) {
+    return outLo + (v - inLo) / (inHi - inLo) * (outHi - outLo);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: RING BUFFER
+// ═══════════════════════════════════════════════════════════════════
+class RingBuffer {
+    constructor(capacity) {
+        this.cap = capacity;
+        this.buf = new Float64Array(capacity);
+        this.head = 0;
+        this.len = 0;
+    }
+    push(v) {
+        this.buf[this.head] = v;
+        this.head = (this.head + 1) % this.cap;
+        if (this.len < this.cap) this.len++;
+    }
+    get(i) { // 0 = most recent
+        if (i >= this.len) return NaN;
+        return this.buf[(this.head - 1 - i + this.cap) % this.cap];
+    }
+    oldest(i) { // 0 = oldest
+        if (i >= this.len) return NaN;
+        return this.buf[(this.head - this.len + i + this.cap) % this.cap];
+    }
+    clear() { this.head = 0; this.len = 0; }
+    get length() { return this.len; }
+    last() { return this.len > 0 ? this.buf[(this.head - 1 + this.cap) % this.cap] : NaN; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: ECG MODEL (lib/ecgModel)
+// Parametric beat model: P/QRS/T as summed Gaussians
+// ═══════════════════════════════════════════════════════════════════
+class ECGModel {
+    constructor(sampleRate = 125) {
+        this.sampleRate = sampleRate;
+        this.phase = -Math.PI;
+    }
+
+    /** Generate one sample. Returns { adc: 0..4095, rPeak: bool } */
+    sample(rrInterval) {
+        const oldPhase = this.phase;
+        const inc = (2 * Math.PI) / (rrInterval * this.sampleRate);
+        this.phase += inc;
+        let rPeak = false;
+        if (oldPhase < 0 && this.phase >= 0) rPeak = true;
+        if (this.phase >= Math.PI) this.phase -= 2 * Math.PI;
+        const v = this._waveform(this.phase);
+        const adc = Math.round(2048 + v * 750);
+        return { adc: clamp(adc, 0, 4095), rPeak };
+    }
+
+    /** Generate noise sample for LEADS_OFF */
+    noiseSample() {
+        const v = (Math.random() - 0.5) * 0.25 +
+                  0.08 * Math.sin(this.phase * 3.7) +
+                  0.05 * Math.sin(this.phase * 7.1);
+        this.phase += 0.15;
+        if (this.phase > Math.PI) this.phase -= 2 * Math.PI;
+        const adc = Math.round(2048 + v * 750);
+        return { adc: clamp(adc, 0, 4095), rPeak: false };
+    }
+
+    _waveform(ph) {
+        const g = (x, a, b, c) => a * Math.exp(-(x - b) * (x - b) / (2 * c * c));
+        return g(ph, 0.11, -1.1, 0.27) +     // P wave
+               g(ph, -0.13, -0.17, 0.065) +   // Q wave
+               g(ph, 1.05, 0.0, 0.055) +      // R wave
+               g(ph, -0.16, 0.14, 0.06) +     // S wave
+               g(ph, 0.20, 0.55, 0.18) +      // T wave
+               g(ph, 0.015, -2.2, 0.4);       // baseline wander
+    }
+
+    reset() { this.phase = -Math.PI; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: SIMULATION ENGINE (lib/simulationEngine)
+// Zero DOM knowledge — pure physiological simulation
+// ═══════════════════════════════════════════════════════════════════
+const SCENARIOS = {
+    RESTING:    { hr: 65,  hrv: 52,  rr: 14,   temp: 36.72, quality: 'GOOD',      noisy: false, leadsOff: false },
+    EXERCISE:   { hr: 148, hrv: 16,  rr: 30,   temp: 37.55, quality: 'GOOD',      noisy: false, leadsOff: false },
+    STRESS:     { hr: 96,  hrv: 24,  rr: 20,   temp: 36.92, quality: 'GOOD',      noisy: false, leadsOff: false },
+    FEVER_LIKE: { hr: 92,  hrv: 28,  rr: 18.5, temp: 38.55, quality: 'GOOD',      noisy: false, leadsOff: false },
+    NOISY:      { hr: 68,  hrv: 48,  rr: 14.5, temp: 36.70, quality: 'NOISY',     noisy: true,  leadsOff: false },
+    LEADS_OFF:  { hr: 65,  hrv: 50,  rr: 14,   temp: 36.70, quality: 'LEADS_OFF', noisy: false, leadsOff: true  },
+};
+
+class SimulationEngine {
+    constructor() {
+        this.ecgModel = new ECGModel(125);
+        this.sampleRate = 125;
+        this.speed = 1.0;
+        this.paused = false;
+        this.scenario = 'RESTING';
+        this.simTime = 0;
+
+        // Current targets and smoothed values
+        const s = SCENARIOS.RESTING;
+        this.targetHR = s.hr;   this.hr = s.hr;
+        this.targetHRV = s.hrv; this.hrv = s.hrv;
+        this.targetRR = s.rr;   this.rr = s.rr;
+        this.targetTemp = s.temp; this.temp = s.temp;
+        this.quality = s.quality;
+        this.leadsOff = false;
+
+        // R-R interval tracking
+        this.currentRR_s = 60 / this.hr; // seconds
+        this.rrIntervals = []; // recent R-R intervals for RMSSD
+        this.maxRRHistory = 30;
+        this.breathPhase = 0;
+
+        // Temperature random walk
+        this.tempNoise = 0;
+
+        // Accumulators
+        this.sampleAccum = 0;
+        this.metricAccum = 0;
+
+        // Output queues (consumed by app)
+        this.ecgQueue = [];
+        this.metricQueue = [];
+        this.rPeakTimes = [];
+
+        // Derived
+        this.state = 'NORMAL';
+        this.risk = 12;
+        this.confidence = 90;
+    }
+
+    setScenario(name) {
+        if (!SCENARIOS[name]) return;
+        this.scenario = name;
+        const s = SCENARIOS[name];
+        this.targetHR = s.hr;
+        this.targetHRV = s.hrv;
+        this.targetRR = s.rr;
+        this.targetTemp = s.temp;
+        this.quality = s.quality;
+        this.leadsOff = s.leadsOff;
+    }
+
+    setSpeed(s) { this.speed = s; }
+    setPaused(p) { this.paused = p; }
+
+    reset() {
+        this.ecgModel.reset();
+        this.simTime = 0;
+        this.sampleAccum = 0;
+        this.metricAccum = 0;
+        this.ecgQueue = [];
+        this.metricQueue = [];
+        this.rPeakTimes = [];
+        this.rrIntervals = [];
+        const s = SCENARIOS[this.scenario];
+        this.hr = s.hr; this.hrv = s.hrv; this.rr = s.rr; this.temp = s.temp;
+        this.currentRR_s = 60 / this.hr;
+        this.breathPhase = 0;
+        this.tempNoise = 0;
+    }
+
+    /** Called with real wall-clock dt (seconds). Produces ECG samples and metric lines. */
+    update(dt) {
+        if (this.paused) return;
+        const simDt = dt * this.speed;
+
+        // Smooth toward targets
+        const alpha = 1 - Math.exp(-simDt * 0.5);
+        this.hr = lerp(this.hr, this.targetHR, alpha);
+        this.hrv = lerp(this.hrv, this.targetHRV, alpha);
+        this.rr = lerp(this.rr, this.targetRR, alpha);
+
+        // Temperature: slow random walk toward target
+        this.tempNoise += (Math.random() - 0.5) * 0.02 * simDt;
+        this.tempNoise *= 0.995;
+        const tempAlpha = 1 - Math.exp(-simDt * 0.08);
+        this.temp = lerp(this.temp, this.targetTemp + this.tempNoise, tempAlpha);
+
+        // Update breathing phase
+        this.breathPhase += (2 * Math.PI * (this.rr / 60)) * simDt;
+        if (this.breathPhase > 2 * Math.PI) this.breathPhase -= 2 * Math.PI;
+
+        // RSA: modulate R-R interval with breathing
+        const rsaAmplitude = this.hrv * 0.001 * 0.5;
+        const rrBase = 60 / this.hr;
+        this.currentRR_s = rrBase + rsaAmplitude * Math.sin(this.breathPhase);
+        this.currentRR_s = Math.max(0.25, this.currentRR_s);
+
+        // Generate ECG samples
+        this.sampleAccum += simDt;
+        const samplesToGen = Math.floor(this.sampleAccum * this.sampleRate);
+        this.sampleAccum -= samplesToGen / this.sampleRate;
+
+        for (let i = 0; i < samplesToGen; i++) {
+            let ecg;
+            if (this.leadsOff) {
+                ecg = this.ecgModel.noiseSample();
+            } else {
+                ecg = this.ecgModel.sample(this.currentRR_s);
+                // Add noise if NOISY
+                if (this.quality === 'NOISY') {
+                    ecg.adc = clamp(ecg.adc + Math.round((Math.random() - 0.5) * 300 +
+                              80 * Math.sin(this.simTime * 50 * 2 * Math.PI)), 0, 4095);
+                }
+            }
+            this.ecgQueue.push(ecg);
+            if (ecg.rPeak && !this.leadsOff) {
+                this.rPeakTimes.push(this.simTime);
+                // Record R-R interval
+                if (this.rPeakTimes.length >= 2) {
+                    const rrI = this.rPeakTimes[this.rPeakTimes.length - 1] -
+                                this.rPeakTimes[this.rPeakTimes.length - 2];
+                    this.rrIntervals.push(rrI);
+                    if (this.rrIntervals.length > this.maxRRHistory)
+                        this.rrIntervals.shift();
+                }
+            }
+            this.simTime += 1 / this.sampleRate;
+        }
+
+        // Compute derived metrics
+        this._computeDerived();
+
+        // Emit metric line at ~1 Hz sim time
+        this.metricAccum += simDt;
+        if (this.metricAccum >= 1.0) {
+            this.metricAccum -= 1.0;
+            this.metricQueue.push(this._buildMetricLine());
+        }
+    }
+
+    _computeDerived() {
+        // Compute HRV from R-R intervals (RMSSD)
+        if (!this.leadsOff && this.rrIntervals.length >= 2) {
+            let sumSqDiff = 0;
+            for (let i = 1; i < this.rrIntervals.length; i++) {
+                const d = (this.rrIntervals[i] - this.rrIntervals[i - 1]) * 1000;
+                sumSqDiff += d * d;
+            }
+            this.hrv = Math.sqrt(sumSqDiff / (this.rrIntervals.length - 1));
+            this.hrv = lerp(this.hrv, this.targetHRV, 0.3);
+        }
+
+        // Risk: deterministic from deviations
+        let r = 0;
+        if (!this.leadsOff) {
+            r += clamp(Math.abs(this.hr - 75) - 15, 0, 60) * 0.5;
+            r += clamp(40 - this.hrv, 0, 35) * 0.4;
+            r += clamp(Math.abs(this.rr - 16) - 4, 0, 15) * 1.0;
+            r += clamp(Math.abs(this.temp - 36.8) - 0.4, 0, 2) * 12;
+            r = clamp(r, 0, 100);
+        }
+        this.risk = r;
+
+        // Confidence
+        if (this.leadsOff) {
+            this.confidence = lerp(this.confidence, 12, 0.02);
+        } else if (this.quality === 'NOISY') {
+            this.confidence = lerp(this.confidence, 58, 0.02);
+        } else {
+            this.confidence = lerp(this.confidence, 85 + Math.min(this.hrv * 0.1, 10), 0.02);
+        }
+        this.confidence = clamp(this.confidence, 5, 98);
+
+        // State
+        if (this.leadsOff || this.quality === 'LEADS_OFF') {
+            this.state = 'UNKNOWN';
+        } else if (this.risk > 60) {
+            this.state = 'CONCERNING';
+        } else if (this.temp > 37.8) {
+            this.state = 'FEVERISH';
+        } else if (this.hr > 88 && this.hrv < 30) {
+            this.state = 'STRESSED';
+        } else {
+            this.state = 'NORMAL';
+        }
+    }
+
+    _buildMetricLine() {
+        const lo = this.leadsOff;
+        return `HR:${lo ? '' : Math.round(this.hr)},` +
+               `HRV:${lo ? '' : Math.round(this.hrv)},` +
+               `RR:${lo ? '' : this.rr.toFixed(1)},` +
+               `TEMP:${this.temp.toFixed(1)},` +
+               `STATE:${this.state},` +
+               `RISK:${Math.round(this.risk)},` +
+               `QUALITY:${this.quality},` +
+               `CONF:${Math.round(this.confidence)}`;
+    }
+
+    /** Get current state snapshot (no DOM ops) */
+    getSnapshot() {
+        const lo = this.leadsOff;
+        return {
+            hr: lo ? null : this.hr,
+            hrv: lo ? null : this.hrv,
+            rr: lo ? null : this.rr,
+            temp: this.temp,
+            state: this.state,
+            risk: this.risk,
+            quality: this.quality,
+            confidence: this.confidence,
+            breathPhase: this.breathPhase,
+            currentRR_s: this.currentRR_s,
+            leadsOff: this.leadsOff,
+        };
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: TELEMETRY PARSER (lib/telemetryParser)
+// Parses: HR:72,HRV:45,RR:14.2,TEMP:36.8,STATE:NORMAL,RISK:22,QUALITY:GOOD,CONF:87
+//     and: E:<0..4095>
+// ═══════════════════════════════════════════════════════════════════
+class TelemetryParser {
+    /** Returns { type: 'metric'|'ecg', data: {...} } or null */
+    static parse(line) {
+        line = line.trim();
+        if (!line) return null;
+
+        // ECG sample
+        if (line.startsWith('E:')) {
+            const v = parseInt(line.substring(2), 10);
+            if (isNaN(v)) return null;
+            return { type: 'ecg', data: { adc: clamp(v, 0, 4095) } };
+        }
+
+        // Metric line
+        if (line.includes('HR:')) {
+            const fields = {};
+            line.split(',').forEach(pair => {
+                const [k, v] = pair.split(':');
+                if (k && v !== undefined) fields[k.trim()] = v.trim();
+            });
+            return {
+                type: 'metric',
+                data: {
+                    hr: fields.HR ? parseFloat(fields.HR) : null,
+                    hrv: fields.HRV ? parseFloat(fields.HRV) : null,
+                    rr: fields.RR ? parseFloat(fields.RR) : null,
+                    temp: fields.TEMP ? parseFloat(fields.TEMP) : null,
+                    state: fields.STATE || 'UNKNOWN',
+                    risk: fields.RISK ? parseFloat(fields.RISK) : null,
+                    quality: fields.QUALITY || 'GOOD',
+                    confidence: fields.CONF ? parseFloat(fields.CONF) : null,
+                }
+            };
+        }
+        return null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: WEB SERIAL CONNECTION
+// ═══════════════════════════════════════════════════════════════════
+class SerialConnection {
+    constructor(onLine) {
+        this.port = null;
+        this.reader = null;
+        this.onLine = onLine;
+        this.buffer = '';
+        this.connected = false;
+        this.available = typeof navigator !== 'undefined' && 'serial' in navigator;
+    }
+    async connect() {
+        if (!this.available) return false;
+        try {
+            this.port = await navigator.serial.requestPort();
+            await this.port.open({ baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' });
+            this.connected = true;
+            this._readLoop();
+            return true;
+        } catch (e) { return false; }
+    }
+    async _readLoop() {
+        const decoder = new TextDecoderStream();
+        this.port.readable.pipeTo(decoder.writable);
+        this.reader = decoder.readable.getReader();
+        try {
+            while (true) {
+                const { value, done } = await this.reader.read();
+                if (done) break;
+                this.buffer += value;
+                const lines = this.buffer.split('\n');
+                this.buffer = lines.pop();
+                for (const l of lines) { if (l.trim()) this.onLine(l.trim()); }
+            }
+        } catch (e) { /* disconnected */ }
+        this.connected = false;
+    }
+    async disconnect() {
+        try {
+            if (this.reader) { await this.reader.cancel(); this.reader = null; }
+            if (this.port) { await this.port.close(); this.port = null; }
+        } catch(e) {}
+        this.connected = false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: CANVAS UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+function setupCanvas(canvas, w, h) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    return ctx;
+}
+
+function autoSizeCanvas(canvas) {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const w = Math.floor(rect.width);
+    const h = Math.floor(rect.height);
+    if (w < 2 || h < 2) return null;
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: APPLICATION STATE
+// ═══════════════════════════════════════════════════════════════════
+const APP = {
+    source: 'SIMULATION',
+    // Current metric values
+    hr: null, hrv: null, rr: null, temp: null,
+    state: 'UNKNOWN', risk: 0, quality: 'GOOD', confidence: 0,
+    breathPhase: 0, currentRR_s: 0.85,
+    leadsOff: false,
+
+    // ECG data ring buffer (raw ADC for display)
+    ecgBuf: new RingBuffer(125 * 60),   // 60 seconds
+    ecgRPeaks: [],                       // recent R-peak indices
+    ecgWriteHead: 0,
+    latestADC: 2048,
+
+    // Telemetry history (1 Hz, 30 minutes)
+    histHR: new RingBuffer(1800),
+    histHRV: new RingBuffer(1800),
+    histRR: new RingBuffer(1800),
+    histTEMP: new RingBuffer(1800),
+    histRISK: new RingBuffer(1800),
+    histCONF: new RingBuffer(1800),
+
+    // Small sparkline buffers (for telemetry cards, ~60 points)
+    sparkHR: new RingBuffer(60),
+    sparkHRV: new RingBuffer(60),
+    sparkRR: new RingBuffer(60),
+    sparkTEMP: new RingBuffer(60),
+
+    // R-R intervals for HRV scatter
+    rrScatter: new RingBuffer(100),
+
+    // UI state
+    ecgLabExpanded: true,
+    ecgPaused: false,
+    ecgLive: true,
+    ecgZoom: 1.0,
+    timelineWindow: 10, // minutes
+    fieldTime: 0,
+
+    // Field visualization state
+    thermalParticles: [],
+    coherenceParticles: [],
+    cardiacPulses: [],
+    fieldSweepAngle: 0,
+};
+
+// Initialize particles
+function initParticles() {
+    APP.thermalParticles = [];
+    for (let i = 0; i < 60; i++) {
+        APP.thermalParticles.push({
+            angle: Math.random() * Math.PI * 2,
+            r: 0.15 + Math.random() * 0.35,
+            speed: (Math.random() - 0.5) * 0.3,
+            rSpeed: (Math.random() - 0.5) * 0.02,
+            size: 0.8 + Math.random() * 1.5,
+            alpha: 0.15 + Math.random() * 0.25,
+        });
+    }
+    APP.coherenceParticles = [];
+    for (let i = 0; i < 40; i++) {
+        APP.coherenceParticles.push({
+            angle: (i / 40) * Math.PI * 2 + (Math.random() - 0.5) * 0.2,
+            r: 0.82 + Math.random() * 0.06,
+            speed: (Math.random() - 0.5) * 0.15,
+            baseSpeed: (Math.random() - 0.5) * 0.15,
+            size: 1.0 + Math.random() * 1.0,
+            alpha: 0.3,
+        });
+    }
+}
+initParticles();
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: PHYSIOLOGICAL FIELD RENDERER
+// ═══════════════════════════════════════════════════════════════════
+function renderField(ctx, w, h, dt) {
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) * 0.42;
+
+    // Layer 3: Respiration — scale the whole field
+    const breathMod = 1 + 0.025 * Math.sin(APP.breathPhase);
+
+    // --- Layer 4: Thermal particles ---
+    const tempFactor = clamp((APP.temp || 36.7) - 35.5, 0, 4) / 4;
+    const activeThermalCount = Math.floor(15 + tempFactor * 45); // particle density scaled by temperature
+    for (let i = 0; i < activeThermalCount; i++) {
+        const p = APP.thermalParticles[i];
+        const speed = (0.3 + tempFactor * 1.5) * dt;
+        p.angle += p.speed * speed;
+        p.r += p.rSpeed * dt * 0.3;
+        if (p.r < 0.12) p.rSpeed = Math.abs(p.rSpeed);
+        if (p.r > 0.52) p.rSpeed = -Math.abs(p.rSpeed);
+        const rr = p.r * R * breathMod;
+        const px = cx + rr * Math.cos(p.angle);
+        const py = cy + rr * Math.sin(p.angle);
+        const a = p.alpha * (0.3 + tempFactor * 0.7);
+        ctx.beginPath();
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 212, 255, ${a.toFixed(3)})`;
+        ctx.fill();
+    }
+
+    // --- Layer 1: ECG Ring ---
+    const ecgRingR = 0.55 * R * breathMod;
+    const ecgWidth = 0.12 * R;
+    const ecgSamples = Math.min(APP.ecgBuf.length, 375); // ~3 seconds
+    if (ecgSamples > 2) {
+        ctx.beginPath();
+        for (let i = 0; i < ecgSamples; i++) {
+            const v = APP.ecgBuf.get(i);
+            const norm = (v - 2048) / 1200;
+            const angle = APP.fieldSweepAngle - (i / 375) * Math.PI * 2;
+            const rr = ecgRingR + norm * ecgWidth;
+            const px = cx + rr * Math.cos(angle - Math.PI / 2);
+            const py = cy + rr * Math.sin(angle - Math.PI / 2);
+            const age = i / ecgSamples;
+            if (i === 0) {
+                ctx.moveTo(px, py);
+            } else {
+                ctx.lineTo(px, py);
+            }
+        }
+        const grad = ctx.createLinearGradient(cx - R, cy, cx + R, cy);
+        grad.addColorStop(0, 'rgba(0, 212, 255, 0.7)');
+        grad.addColorStop(1, 'rgba(139, 92, 246, 0.5)');
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.55)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // Bright head
+        if (ecgSamples > 0) {
+            const v = APP.ecgBuf.get(0);
+            const norm = (v - 2048) / 1200;
+            const rr2 = ecgRingR + norm * ecgWidth;
+            const px = cx + rr2 * Math.cos(APP.fieldSweepAngle - Math.PI / 2);
+            const py = cy + rr2 * Math.sin(APP.fieldSweepAngle - Math.PI / 2);
+            ctx.beginPath();
+            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
+            ctx.fill();
+        }
+    }
+
+    // ECG ring base circle (subtle)
+    ctx.beginPath();
+    ctx.arc(cx, cy, ecgRingR, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(40, 55, 80, 0.2)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // --- Layer 2: Cardiac pulses ---
+    const now = performance.now();
+    APP.cardiacPulses = APP.cardiacPulses.filter(p => now - p.t < 900);
+    APP.cardiacPulses.forEach(p => {
+        const progress = (now - p.t) / 900;
+        const pulseR = (0.55 + progress * 0.3) * R * breathMod;
+        const alpha = (1 - progress) * 0.35;
+        ctx.beginPath();
+        ctx.arc(cx, cy, pulseR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(139, 92, 246, ${alpha.toFixed(3)})`;
+        ctx.lineWidth = 1.5 * (1 - progress * 0.5);
+        ctx.stroke();
+    });
+
+    // --- Layer 5: State coherence ring ---
+    const riskFactor = clamp((APP.risk || 0) / 100, 0, 1);
+    const confFactor = clamp((APP.confidence || 50) / 100, 0, 1);
+    const stateRingR = 0.85 * R * breathMod;
+
+    // Coherence ring base
+    ctx.beginPath();
+    ctx.arc(cx, cy, stateRingR, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(40, 55, 80, ${(0.15 + riskFactor * 0.15).toFixed(3)})`;
+    ctx.lineWidth = 8;
+    ctx.stroke();
+
+    // Coherence particles
+    APP.coherenceParticles.forEach(p => {
+        const agitation = 0.15 + riskFactor * 2.0;
+        p.angle += (p.baseSpeed + (Math.random() - 0.5) * agitation * 0.1) * dt;
+        p.r = 0.82 + Math.sin(p.angle * 3.7 + now * 0.001) * 0.03 * (1 + riskFactor);
+        const rr = p.r * R * breathMod;
+        const px = cx + rr * Math.cos(p.angle);
+        const py = cy + rr * Math.sin(p.angle);
+        const a = (0.15 + riskFactor * 0.4) * confFactor;
+        const hue = riskFactor < 0.4 ? '139, 92, 246' : (riskFactor < 0.7 ? '245, 158, 11' : '239, 68, 68');
+        ctx.beginPath();
+        ctx.arc(px, py, p.size * (1 + riskFactor * 0.5), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${hue}, ${a.toFixed(3)})`;
+        ctx.fill();
+    });
+
+    // Inner separation ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.72 * R * breathMod, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(40, 55, 80, 0.12)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // --- Metric arcs orbiting the ring ---
+    const metrics = [
+        { label: 'HR', value: fmt(APP.hr, 0), unit: 'bpm', color: '#00D4FF', angle: -Math.PI * 0.35 },
+        { label: 'HRV', value: fmt(APP.hrv, 0), unit: 'ms', color: '#8B5CF6', angle: -Math.PI * 0.1 },
+        { label: 'RR', value: fmt(APP.rr, 1), unit: 'br/m', color: '#10B981', angle: Math.PI * 0.15 },
+        { label: 'TEMP', value: fmt(APP.temp, 1), unit: '°C', color: '#F59E0B', angle: Math.PI * 0.4 },
+        { label: 'RISK', value: fmt(APP.risk, 0), unit: '', color: riskFactor > 0.5 ? '#EF4444' : '#64748B', angle: Math.PI * 0.65 },
+    ];
+
+    const arcR = 0.95 * R * breathMod;
+    const arcLen = 0.12;
+    metrics.forEach(m => {
+        // Thin arc
+        ctx.beginPath();
+        ctx.arc(cx, cy, arcR, m.angle - arcLen, m.angle + arcLen);
+        ctx.strokeStyle = m.color + '55';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Label
+        const lx = cx + (arcR + 14) * Math.cos(m.angle);
+        const ly = cy + (arcR + 14) * Math.sin(m.angle);
+        ctx.font = '8px ' + FONT_MONO;
+        ctx.fillStyle = m.color + '88';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(m.label, lx, ly - 2);
+        ctx.font = 'bold 12px ' + FONT_MONO;
+        ctx.fillStyle = m.color;
+        ctx.textBaseline = 'top';
+        ctx.fillText(m.value, lx, ly);
+        if (m.unit) {
+            ctx.font = '7px ' + FONT_MONO;
+            ctx.fillStyle = m.color + '66';
+            ctx.fillText(m.unit, lx, ly + 14);
+        }
+    });
+
+    // --- Center: STATE + CONFIDENCE ---
+    const stateColors = {
+        NORMAL: '#10B981', STRESSED: '#F59E0B', FEVERISH: '#F97316',
+        CONCERNING: '#EF4444', UNKNOWN: '#64748B'
+    };
+    const sc = stateColors[APP.state] || '#64748B';
+    ctx.font = 'bold 14px ' + FONT_MONO;
+    ctx.fillStyle = sc;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(APP.state, cx, cy - 8);
+
+    ctx.font = '10px ' + FONT_MONO;
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+    ctx.fillText(fmt(APP.confidence, 0) + '%', cx, cy + 10);
+
+    // Advance sweep angle
+    const sweepSpeed = APP.hr ? (APP.hr / 60) * 0.8 : 0.8;
+    APP.fieldSweepAngle += sweepSpeed * dt;
+    if (APP.fieldSweepAngle > Math.PI * 2) APP.fieldSweepAngle -= Math.PI * 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: ECG LAB RENDERER
+// ═══════════════════════════════════════════════════════════════════
+function renderECGLab(ctx, w, h) {
+    if (!APP.ecgLabExpanded) return;
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 50, r: 16, t: 12, b: 24 };
+    const gw = w - pad.l - pad.r;
+    const gh = h - pad.t - pad.b;
+
+    // seconds to show (zoom)
+    const secVisible = 5 / APP.ecgZoom;
+    const sampVisible = Math.floor(secVisible * 125);
+
+    // Grid
+    // Minor grid: every 40ms (5 samples)
+    const msPerPx = (secVisible * 1000) / gw;
+    for (let ms = 0; ms <= secVisible * 1000; ms += 40) {
+        const x = pad.l + (ms / (secVisible * 1000)) * gw;
+        const isMajor = ms % 200 === 0;
+        ctx.beginPath();
+        ctx.moveTo(x, pad.t);
+        ctx.lineTo(x, pad.t + gh);
+        ctx.strokeStyle = isMajor ? 'rgba(40, 55, 80, 0.25)' : 'rgba(40, 55, 80, 0.1)';
+        ctx.lineWidth = isMajor ? 0.8 : 0.5;
+        ctx.stroke();
+    }
+    // Vertical grid (ADC)
+    for (let adc = 0; adc <= 4095; adc += 200) {
+        const y = pad.t + (1 - adc / 4095) * gh;
+        const isMajor = adc % 1000 === 0;
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(pad.l + gw, y);
+        ctx.strokeStyle = isMajor ? 'rgba(40, 55, 80, 0.25)' : 'rgba(40, 55, 80, 0.08)';
+        ctx.lineWidth = isMajor ? 0.8 : 0.5;
+        ctx.stroke();
+        if (isMajor) {
+            ctx.font = '8px ' + FONT_MONO;
+            ctx.fillStyle = 'rgba(100, 116, 139, 0.5)';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(adc, pad.l - 4, y);
+        }
+    }
+
+    // Time labels
+    ctx.font = '8px ' + FONT_MONO;
+    ctx.fillStyle = 'rgba(100, 116, 139, 0.5)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let s = 0; s <= secVisible; s += (secVisible <= 3 ? 0.5 : 1)) {
+        const x = pad.l + gw - (s / secVisible) * gw;
+        ctx.fillText('-' + s.toFixed(secVisible <= 3 ? 1 : 0) + 's', x, pad.t + gh + 4);
+    }
+
+    // ECG waveform
+    const nSamples = Math.min(APP.ecgBuf.length, sampVisible);
+    if (nSamples > 1) {
+        ctx.beginPath();
+        for (let i = 0; i < nSamples; i++) {
+            const v = APP.ecgBuf.get(i);
+            const x = pad.l + gw - (i / sampVisible) * gw;
+            const y = pad.t + (1 - v / 4095) * gh;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+    }
+
+    // R-peak markers
+    APP.ecgRPeaks.forEach(idx => {
+        const age = APP.ecgWriteHead - idx;
+        if (age < 0 || age >= sampVisible) return;
+        const x = pad.l + gw - (age / sampVisible) * gw;
+        ctx.beginPath();
+        ctx.moveTo(x, pad.t);
+        ctx.lineTo(x, pad.t + gh);
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.3)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // R marker
+        ctx.font = '7px ' + FONT_MONO;
+        ctx.fillStyle = 'rgba(139, 92, 246, 0.6)';
+        ctx.textAlign = 'center';
+        ctx.fillText('R', x, pad.t + 2);
+    });
+
+    // Border
+    ctx.strokeStyle = 'rgba(40, 55, 80, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pad.l, pad.t, gw, gh);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: TELEMETRY PANEL RENDERERS
+// ═══════════════════════════════════════════════════════════════════
+function renderSparkline(ctx, w, h, buf, color, minV, maxV) {
+    ctx.clearRect(0, 0, w, h);
+    const n = buf.length;
+    if (n < 2) return;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+        const v = buf.oldest(i);
+        if (isNaN(v)) continue;
+        const x = (i / (n - 1)) * w;
+        const y = h - ((v - minV) / (maxV - minV)) * h * 0.85 - h * 0.05;
+        if (i === 0 || isNaN(buf.oldest(i - 1))) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Fill under
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, color + '15');
+    grad.addColorStop(1, color + '02');
+    ctx.fillStyle = grad;
+    ctx.fill();
+}
+
+function renderHRVScatter(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    const n = APP.rrScatter.length;
+    if (n < 2) return;
+    // Poincaré plot: RR(n) vs RR(n+1)
+    const minRR = 300, maxRR = 1500;
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.4)';
+    for (let i = 0; i < n - 1; i++) {
+        const v0 = APP.rrScatter.oldest(i);
+        const v1 = APP.rrScatter.oldest(i + 1);
+        if (isNaN(v0) || isNaN(v1)) continue;
+        const x = ((v0 - minRR) / (maxRR - minRR)) * w;
+        const y = h - ((v1 - minRR) / (maxRR - minRR)) * h;
+        const age = 1 - i / n;
+        ctx.globalAlpha = 0.2 + age * 0.6;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Identity line
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    ctx.lineTo(w, 0);
+    ctx.strokeStyle = 'rgba(139, 92, 246, 0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+}
+
+function renderBreathWave(ctx, w, h, t) {
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    for (let x = 0; x < w; x++) {
+        const phase = (x / w) * Math.PI * 4 - t * 2;
+        const y = h / 2 + Math.sin(phase) * h * 0.35;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Fill
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(16, 185, 129, 0.1)');
+    grad.addColorStop(1, 'rgba(16, 185, 129, 0.01)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+}
+
+function renderQualityBar(ctx, w, h, quality) {
+    ctx.clearRect(0, 0, w, h);
+    const levels = { GOOD: 1.0, NOISY: 0.5, LEADS_OFF: 0.1 };
+    const colors = { GOOD: '#10B981', NOISY: '#F59E0B', LEADS_OFF: '#EF4444' };
+    const level = levels[quality] || 0.1;
+    const color = colors[quality] || '#EF4444';
+    const segments = 10;
+    const segW = (w - (segments - 1) * 2) / segments;
+    const activeSegs = Math.round(level * segments);
+    for (let i = 0; i < segments; i++) {
+        const x = i * (segW + 2);
+        ctx.fillStyle = i < activeSegs ? color + 'AA' : 'rgba(40, 55, 80, 0.2)';
+        ctx.fillRect(x, h * 0.25, segW, h * 0.5);
+    }
+}
+
+function renderConfGauge(ctx, w, h, conf) {
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h * 0.55;
+    const r = Math.min(w, h) * 0.38;
+    const startAngle = Math.PI * 0.75;
+    const endAngle = Math.PI * 2.25;
+    const range = endAngle - startAngle;
+
+    // Background arc
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startAngle, endAngle);
+    ctx.strokeStyle = 'rgba(40, 55, 80, 0.3)';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Value arc
+    const val = clamp((conf || 0) / 100, 0, 1);
+    const valAngle = startAngle + val * range;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startAngle, valAngle);
+    const hue = val > 0.7 ? '#00D4FF' : val > 0.4 ? '#F59E0B' : '#EF4444';
+    ctx.strokeStyle = hue;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Center value
+    ctx.font = 'bold 11px ' + FONT_MONO;
+    ctx.fillStyle = hue;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fmt(conf, 0) + '%', cx, cy + 2);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: TIMELINE RENDERER
+// ═══════════════════════════════════════════════════════════════════
+const TIMELINE_METRICS = [
+    { label: 'HR', buf: 'histHR', color: '#00D4FF', min: 40, max: 180, unit: 'bpm' },
+    { label: 'HRV', buf: 'histHRV', color: '#8B5CF6', min: 0, max: 100, unit: 'ms' },
+    { label: 'RR', buf: 'histRR', color: '#10B981', min: 8, max: 35, unit: 'br/m' },
+    { label: 'TEMP', buf: 'histTEMP', color: '#F59E0B', min: 35.5, max: 40, unit: '°C' },
+    { label: 'RISK', buf: 'histRISK', color: '#EF4444', min: 0, max: 100, unit: '' },
+    { label: 'CONF', buf: 'histCONF', color: '#64748B', min: 0, max: 100, unit: '%' },
+];
+
+let timelineHoverX = -1;
+
+function renderTimeline(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    const nMetrics = TIMELINE_METRICS.length;
+    const pad = { l: 48, r: 12, t: 6, b: 6 };
+    const gw = w - pad.l - pad.r;
+    const rowH = (h - pad.t - pad.b) / nMetrics;
+    const windowSamples = APP.timelineWindow * 60; // 1 Hz
+
+    TIMELINE_METRICS.forEach((m, mi) => {
+        const y0 = pad.t + mi * rowH;
+        const yh = rowH - 2;
+        const buf = APP[m.buf];
+
+        // Separator
+        if (mi > 0) {
+            ctx.beginPath();
+            ctx.moveTo(pad.l, y0);
+            ctx.lineTo(pad.l + gw, y0);
+            ctx.strokeStyle = 'rgba(40, 55, 80, 0.2)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+        }
+
+        // Label
+        ctx.font = '8px ' + FONT_MONO;
+        ctx.fillStyle = m.color + '88';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText(m.label, pad.l - 6, y0 + 2);
+
+        // Data
+        const n = Math.min(buf.length, windowSamples);
+        if (n < 2) return;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < n; i++) {
+            const idx = buf.length - n + i;
+            const v = buf.oldest(idx);
+            if (isNaN(v)) { started = false; continue; }
+            const x = pad.l + (i / (windowSamples - 1)) * gw;
+            const ny = clamp((v - m.min) / (m.max - m.min), 0, 1);
+            const y = y0 + yh - ny * (yh - 4) - 2;
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = m.color + 'AA';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    });
+
+    // Hover cursor
+    if (timelineHoverX >= 0) {
+        const x = timelineHoverX;
+        if (x >= pad.l && x <= pad.l + gw) {
+            ctx.beginPath();
+            ctx.moveTo(x, pad.t);
+            ctx.lineTo(x, h - pad.b);
+            ctx.strokeStyle = 'rgba(226, 232, 240, 0.3)';
+            ctx.lineWidth = 0.8;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Compute data index
+            const frac = (x - pad.l) / gw;
+            const windowSamples = APP.timelineWindow * 60;
+            const tooltip = document.getElementById('timelineTooltip');
+            const wrap = document.getElementById('timelineWrap');
+            const wrapRect = wrap.getBoundingClientRect();
+
+            TIMELINE_METRICS.forEach(m => {
+                const buf = APP[m.buf];
+                const n = Math.min(buf.length, windowSamples);
+                const idx = Math.floor(frac * (n - 1));
+                const actualIdx = buf.length - n + idx;
+                const v = actualIdx >= 0 && actualIdx < buf.length ? buf.oldest(actualIdx) : NaN;
+                const el = document.getElementById('tt' + m.label);
+                if (el) el.textContent = isNaN(v) ? '---' : v.toFixed(m.label === 'TEMP' ? 1 : 0);
+            });
+
+            tooltip.style.display = 'block';
+            const tipLeft = x + 12;
+            tooltip.style.left = (tipLeft + 140 > w ? x - 140 : tipLeft) + 'px';
+            tooltip.style.top = '20px';
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: APPLICATION CONTROLLER
+// ═══════════════════════════════════════════════════════════════════
+const sim = new SimulationEngine();
+const serial = new SerialConnection(line => {
+    const parsed = TelemetryParser.parse(line);
+    if (parsed) processIncoming(parsed, 'HARDWARE');
+});
+
+function processIncoming(parsed, source) {
+    APP.source = source === 'HARDWARE' ? 'LIVE' : 'SIMULATION';
+    if (parsed.type === 'ecg') {
+        APP.ecgBuf.push(parsed.data.adc);
+        APP.latestADC = parsed.data.adc;
+        APP.ecgWriteHead++;
+    } else if (parsed.type === 'metric') {
+        const d = parsed.data;
+        APP.hr = d.hr;
+        APP.hrv = d.hrv;
+        APP.rr = d.rr;
+        APP.temp = d.temp;
+        APP.state = d.state;
+        APP.risk = d.risk;
+        APP.quality = d.quality;
+        APP.confidence = d.confidence;
+
+        // Push to history
+        if (d.hr !== null) APP.histHR.push(d.hr);
+        if (d.hrv !== null) APP.histHRV.push(d.hrv);
+        if (d.rr !== null) APP.histRR.push(d.rr);
+        if (d.temp !== null) APP.histTEMP.push(d.temp);
+        APP.histRISK.push(d.risk || 0);
+        APP.histCONF.push(d.confidence || 0);
+
+        // Sparklines
+        if (d.hr !== null) APP.sparkHR.push(d.hr);
+        if (d.hrv !== null) APP.sparkHRV.push(d.hrv);
+        if (d.rr !== null) APP.sparkRR.push(d.rr);
+        if (d.temp !== null) APP.sparkTEMP.push(d.temp);
+    }
+}
+
+function updateFromSim(dt) {
+    sim.update(dt);
+
+    // Consume ECG samples
+    while (sim.ecgQueue.length > 0) {
+        const s = sim.ecgQueue.shift();
+        APP.ecgBuf.push(s.adc);
+        APP.latestADC = s.adc;
+        APP.ecgWriteHead++;
+        if (s.rPeak) {
+            APP.cardiacPulses.push({ t: performance.now() });
+            APP.ecgRPeaks.push(APP.ecgWriteHead);
+            // Keep only recent peaks
+            while (APP.ecgRPeaks.length > 50) APP.ecgRPeaks.shift();
+        }
+    }
+
+    // Consume metric lines
+    while (sim.metricQueue.length > 0) {
+        const line = sim.metricQueue.shift();
+        const parsed = TelemetryParser.parse(line);
+        if (parsed) processIncoming(parsed, 'SIMULATION');
+    }
+
+    // Also push R-R intervals for scatter
+    if (sim.rrIntervals.length > 0) {
+        const last = sim.rrIntervals[sim.rrIntervals.length - 1];
+        if (!isNaN(last)) APP.rrScatter.push(last * 1000);
+    }
+
+    // Sync live state
+    const snap = sim.getSnapshot();
+    APP.breathPhase = snap.breathPhase;
+    APP.currentRR_s = snap.currentRR_s;
+    APP.leadsOff = snap.leadsOff;
+
+    // Sync state values directly for smoother display
+    if (!serial.connected) {
+        APP.hr = snap.hr;
+        APP.hrv = snap.hrv;
+        APP.rr = snap.rr;
+        APP.temp = snap.temp;
+        APP.state = snap.state;
+        APP.risk = snap.risk;
+        APP.quality = snap.quality;
+        APP.confidence = snap.confidence;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DOM UPDATES (throttled — not per-frame for text elements)
+// ═══════════════════════════════════════════════════════════════════
+let domUpdateAccum = 0;
+function updateDOM() {
+    // Text values
+    document.getElementById('tvHR').textContent = fmt(APP.hr, 0);
+    document.getElementById('tvHRV').textContent = fmt(APP.hrv, 0);
+    document.getElementById('tvRR').textContent = fmt(APP.rr, 1);
+    document.getElementById('tvTEMP').textContent = fmt(APP.temp, 1);
+    document.getElementById('tvQUALITY').textContent = APP.quality || '---';
+    document.getElementById('tvCONF').textContent = fmt(APP.confidence, 0);
+
+    // Quality color
+    const qColors = { GOOD: 'var(--green)', NOISY: 'var(--amber)', LEADS_OFF: 'var(--red)' };
+    document.getElementById('tvQUALITY').style.color = qColors[APP.quality] || 'var(--text-dim)';
+
+    // Risk / Conf
+    document.getElementById('riskValue').textContent = fmt(APP.risk, 0);
+    document.getElementById('confValue').textContent = fmt(APP.confidence, 0) + (APP.confidence !== null ? '%' : '');
+
+    // State engine
+    document.querySelectorAll('.state-item').forEach(el => {
+        const st = el.dataset.state;
+        if (st === APP.state) el.classList.add('active');
+        else el.classList.remove('active');
+    });
+
+    // Connection indicator
+    const src = serial.connected ? 'LIVE' : 'SIMULATION';
+    document.getElementById('connLabel').textContent = src;
+    const dot = document.getElementById('connDot');
+    dot.className = 'conn-dot ' + (serial.connected ? 'live' : 'sim');
+    document.getElementById('simTag').style.display = serial.connected ? 'none' : '';
+    document.getElementById('ecgSourceLabel').textContent = serial.connected ? 'HW' : 'SIM';
+
+    // ECG ADC
+    document.getElementById('ecgADC').textContent = 'ADC: ' + (APP.leadsOff ? '---' : APP.latestADC);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════════════
+let lastFrameTime = 0;
+let animTime = 0;
+
+function mainLoop(timestamp) {
+    const dt = Math.min((timestamp - lastFrameTime) / 1000, 0.1);
+    lastFrameTime = timestamp;
+    animTime += dt;
+
+    // Update simulation if not using hardware
+    if (!serial.connected) {
+        updateFromSim(dt);
+    }
+
+    APP.fieldTime += dt;
+
+    // Render Field
+    const fieldRes = autoSizeCanvas(document.getElementById('fieldCanvas'));
+    if (fieldRes) renderField(fieldRes.ctx, fieldRes.w, fieldRes.h, dt);
+
+    // Render ECG Lab
+    if (APP.ecgLabExpanded && !APP.ecgPaused) {
+        const ecgRes = autoSizeCanvas(document.getElementById('ecgLabCanvas'));
+        if (ecgRes) renderECGLab(ecgRes.ctx, ecgRes.w, ecgRes.h);
+    }
+
+    // Render Telemetry Canvases
+    const hrRes = autoSizeCanvas(document.getElementById('cvHR'));
+    if (hrRes) renderSparkline(hrRes.ctx, hrRes.w, hrRes.h, APP.sparkHR, '#00D4FF', 40, 180);
+
+    const hrvRes = autoSizeCanvas(document.getElementById('cvHRV'));
+    if (hrvRes) renderHRVScatter(hrvRes.ctx, hrvRes.w, hrvRes.h);
+
+    const rrRes = autoSizeCanvas(document.getElementById('cvRR'));
+    if (rrRes) renderBreathWave(rrRes.ctx, rrRes.w, rrRes.h, animTime * ((APP.rr || 14) / 14));
+
+    const tempRes = autoSizeCanvas(document.getElementById('cvTEMP'));
+    if (tempRes) renderSparkline(tempRes.ctx, tempRes.w, tempRes.h, APP.sparkTEMP, '#F59E0B', 35.5, 40);
+
+    const qualRes = autoSizeCanvas(document.getElementById('cvQUALITY'));
+    if (qualRes) renderQualityBar(qualRes.ctx, qualRes.w, qualRes.h, APP.quality);
+
+    const confRes = autoSizeCanvas(document.getElementById('cvCONF'));
+    if (confRes) renderConfGauge(confRes.ctx, confRes.w, confRes.h, APP.confidence);
+
+    // Render Timeline
+    const tlRes = autoSizeCanvas(document.getElementById('timelineCanvas'));
+    if (tlRes) renderTimeline(tlRes.ctx, tlRes.w, tlRes.h);
+
+    // DOM updates at ~4 Hz
+    domUpdateAccum += dt;
+    if (domUpdateAccum >= 0.25) {
+        domUpdateAccum = 0;
+        updateDOM();
+    }
+
+    requestAnimationFrame(mainLoop);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SECTION: EVENT HANDLERS & INITIALIZATION
+// ═══════════════════════════════════════════════════════════════════
+function initUI() {
+    // Scenario buttons
+    document.querySelectorAll('[data-scenario]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-scenario]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            sim.setScenario(btn.dataset.scenario);
+        });
+    });
+
+    // Speed buttons
+    document.querySelectorAll('[data-speed]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-speed]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            sim.setSpeed(parseFloat(btn.dataset.speed));
+        });
+    });
+
+    // Pause / Reset
+    const btnPause = document.getElementById('btnPause');
+    btnPause.addEventListener('click', () => {
+        sim.paused = !sim.paused;
+        btnPause.textContent = sim.paused ? 'RESUME' : 'PAUSE';
+        btnPause.classList.toggle('active', sim.paused);
+    });
+    document.getElementById('btnReset').addEventListener('click', () => {
+        sim.reset();
+        APP.ecgBuf.clear();
+        APP.ecgRPeaks = [];
+        APP.ecgWriteHead = 0;
+        APP.histHR.clear(); APP.histHRV.clear(); APP.histRR.clear();
+        APP.histTEMP.clear(); APP.histRISK.clear(); APP.histCONF.clear();
+        APP.sparkHR.clear(); APP.sparkHRV.clear(); APP.sparkRR.clear(); APP.sparkTEMP.clear();
+        APP.rrScatter.clear();
+        APP.cardiacPulses = [];
+        initParticles();
+    });
+
+    // ECG Lab toggle
+    document.getElementById('ecgLabToggle').addEventListener('click', () => {
+        APP.ecgLabExpanded = !APP.ecgLabExpanded;
+        document.getElementById('ecgLabBody').classList.toggle('expanded', APP.ecgLabExpanded);
+        document.getElementById('ecgChevron').classList.toggle('expanded', APP.ecgLabExpanded);
+    });
+
+    // ECG Lab controls
+    document.getElementById('ecgPause').addEventListener('click', function() {
+        APP.ecgPaused = !APP.ecgPaused;
+        this.textContent = APP.ecgPaused ? 'RESUME' : 'PAUSE';
+        this.classList.toggle('active', APP.ecgPaused);
+    });
+    document.getElementById('ecgClear').addEventListener('click', () => {
+        APP.ecgBuf.clear();
+        APP.ecgRPeaks = [];
+        APP.ecgWriteHead = 0;
+    });
+    document.getElementById('ecgZoomIn').addEventListener('click', () => {
+        APP.ecgZoom = Math.min(APP.ecgZoom * 1.5, 4);
+    });
+    document.getElementById('ecgZoomOut').addEventListener('click', () => {
+        APP.ecgZoom = Math.max(APP.ecgZoom / 1.5, 0.25);
+    });
+    document.getElementById('ecgLiveBtn').addEventListener('click', function() {
+        APP.ecgLive = !APP.ecgLive;
+        this.classList.toggle('active', APP.ecgLive);
+    });
+
+    // Timeline window buttons
+    document.querySelectorAll('[data-twindow]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-twindow]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            APP.timelineWindow = parseInt(btn.dataset.twindow);
+        });
+    });
+
+    // Timeline hover
+    const tlCanvas = document.getElementById('timelineCanvas');
+    const tlWrap = document.getElementById('timelineWrap');
+    const tooltip = document.getElementById('timelineTooltip');
+    tlWrap.addEventListener('mousemove', e => {
+        const rect = tlWrap.getBoundingClientRect();
+        timelineHoverX = e.clientX - rect.left;
+    });
+    tlWrap.addEventListener('mouseleave', () => {
+        timelineHoverX = -1;
+        tooltip.style.display = 'none';
+    });
+
+    // Connect button
+    const connectBtn = document.getElementById('connectBtn');
+    if (!serial.available) {
+        connectBtn.disabled = true;
+        connectBtn.title = 'Web Serial not available in this browser';
+    }
+    connectBtn.addEventListener('click', async () => {
+        if (serial.connected) {
+            await serial.disconnect();
+            connectBtn.textContent = 'CONNECT';
+        } else {
+            const ok = await serial.connect();
+            if (ok) connectBtn.textContent = 'DISCONNECT';
+        }
+    });
+
+    // Size field canvas
+    sizeFieldCanvas();
+    window.addEventListener('resize', sizeFieldCanvas);
+}
+
+function sizeFieldCanvas() {
+    const container = document.getElementById('fieldContainer');
+    const vh = window.innerHeight;
+    const vw = window.innerWidth;
+    const size = Math.max(340, Math.min(Math.floor(vh * 0.52), Math.floor(vw * 0.55), 620));
+    container.style.width = size + 'px';
+    container.style.height = size + 'px';
+    const canvas = document.getElementById('fieldCanvas');
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+}
+
+function preseedHistory() {
+    const baseHR = 65, baseHRV = 52, baseRR = 14.0, baseTemp = 36.72;
+    for (let i = 90; i >= 0; i--) {
+        const t = -i;
+        const breath = Math.sin(t * (2 * Math.PI * (baseRR / 60)));
+        const hr = baseHR + 3.0 * breath + Math.sin(t * 0.08) * 1.2;
+        const hrv = baseHRV + 4.0 * Math.sin(t * 0.05);
+        const rr = baseRR + 0.3 * Math.sin(t * 0.03);
+        const temp = baseTemp + 0.02 * Math.sin(t * 0.02);
+        const risk = 12 + Math.abs(Math.sin(t * 0.04) * 3);
+        const conf = 91 + Math.sin(t * 0.05) * 2;
+
+        APP.histHR.push(hr);
+        APP.histHRV.push(hrv);
+        APP.histRR.push(rr);
+        APP.histTEMP.push(temp);
+        APP.histRISK.push(risk);
+        APP.histCONF.push(conf);
+
+        if (i < 60) {
+            APP.sparkHR.push(hr);
+            APP.sparkHRV.push(hrv);
+            APP.sparkRR.push(rr);
+            APP.sparkTEMP.push(temp);
+        }
+
+        const rrMs = (60 / hr) * 1000;
+        APP.rrScatter.push(rrMs);
+    }
+
+    const seedModel = new ECGModel(125);
+    const rrBase = 60 / baseHR;
+    for (let i = 0; i < 125 * 5; i++) {
+        const samp = seedModel.sample(rrBase);
+        APP.ecgBuf.push(samp.adc);
+        APP.latestADC = samp.adc;
+        APP.ecgWriteHead++;
+        if (samp.rPeak) {
+            APP.ecgRPeaks.push(APP.ecgWriteHead);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+    initUI();
+    preseedHistory();
+    sim.setScenario('RESTING');
+    updateDOM();
+    requestAnimationFrame(mainLoop);
+});
+</script>
+</body>
+</html>
